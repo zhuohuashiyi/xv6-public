@@ -2,24 +2,24 @@
 #include "memlayout.h"
 #include "mmu.h"
 
-# Start the first CPU: switch to 32-bit protected mode, jump into C.
-# The BIOS loads this code from the first sector of the hard disk into
-# memory at physical address 0x7c00 and starts executing in real mode
-# with %cs=0 %ip=7c00.
+# 该汇编程序的作用是：开启第一个CPU，切换到32位保护模式。
+# 该代码保存在硬盘第一个扇区，开机后由BIOS加载到物理地址0x7c00开始的
+# 一段内存，设置寄存器cs的值为0，ip寄存器的值为7c00，然后以16位的实
+# 模式运行该代码
 
-.code16                       # Assemble for 16-bit mode
+.code16                       # 表示以下代码应在16位下运行
 .globl start
 start:
-  cli                         # BIOS enabled interrupts; disable
+  cli                         # 关中断，保证下面的程序段不间断地运行
 
-  # Zero data segment registers DS, ES, and SS.
-  xorw    %ax,%ax             # Set %ax to zero
-  movw    %ax,%ds             # -> Data Segment
-  movw    %ax,%es             # -> Extra Segment
-  movw    %ax,%ss             # -> Stack Segment
+  # 将三个数据段寄存器ds, es, ss的值置零
+  xorw    %ax,%ax             # 异或运算，置ax=0
+  movw    %ax,%ds             # 数据段寄存器
+  movw    %ax,%es             # 扩展段寄存器
+  movw    %ax,%ss             # 栈段寄存器
 
-  # Physical address line A20 is tied to zero so that the first PCs 
-  # with 2 MB would run software that assumed 1 MB.  Undo that.
+  # 设置A20地址线，因为刚开始只能使用20条地址线，通过写端口数据可以设置成所有的地址线
+
 seta20.1:
   inb     $0x64,%al               # Wait for not busy
   testb   $0x2,%al
@@ -36,9 +36,8 @@ seta20.2:
   movb    $0xdf,%al               # 0xdf -> port 0x60
   outb    %al,$0x60
 
-  # Switch from real to protected mode.  Use a bootstrap GDT that makes
-  # virtual addresses map directly to physical addresses so that the
-  # effective memory map doesn't change during the transition.
+  # 从实模式切换到保护模式。使用一个GDT全局描述符表来将虚拟地址
+  # 直接映射到物理地址，保证在切换过程中有效的内存映射不变
   lgdt    gdtdesc
   movl    %cr0, %eax
   orl     $CR0_PE, %eax
@@ -48,11 +47,17 @@ seta20.2:
   # Complete the transition to 32-bit protected mode by using a long jmp
   # to reload %cs and %eip.  The segment descriptors are set up with no
   # translation, so that the mapping is still the identity mapping.
+
+  # 使用ljmp指令重载cs和eip寄存器的值完成到32保护模式的切换
+  # 在保护模式下，cs等段寄存器的值作为索引从gdt表中取出对应段
+  # 的起始地址，从gdt的定义可以知道，该程序中只定义了数据段和代码段，
+  # 两端的起始地址都是0，所以这里物理地址相等映射到虚拟地址
+
   ljmp    $(SEG_KCODE<<3), $start32
 
-.code32  # Tell assembler to generate 32-bit code now.
+.code32  # 告诉汇编器以下是32位的代码
 start32:
-  # Set up the protected-mode data segment registers
+  # 以下设置保护模式下各个数据段寄存器的值
   movw    $(SEG_KDATA<<3), %ax    # Our data segment selector
   movw    %ax, %ds                # -> DS: Data Segment
   movw    %ax, %es                # -> ES: Extra Segment
@@ -61,7 +66,7 @@ start32:
   movw    %ax, %fs                # -> FS
   movw    %ax, %gs                # -> GS
 
-  # Set up the stack pointer and call into C.
+  # 设置栈指针，调用C函数
   movl    $start, %esp
   call    bootmain
 
@@ -75,8 +80,8 @@ start32:
 spin:
   jmp     spin
 
-# Bootstrap GDT
-.p2align 2                                # force 4 byte alignment
+# GDT全局描述符表的定义
+.p2align 2                                # 强制按照四字节对齐
 gdt:
   SEG_NULLASM                             # null seg
   SEG_ASM(STA_X|STA_R, 0x0, 0xffffffff)   # code seg

@@ -18,7 +18,7 @@
 # of entrypgdir in start-12.
 #
 # This code combines elements of bootasm.S and entry.S.
-
+# 该汇编程序是其他所有非主CPU第一个执行的程序，其实就是完成了主CPU在bootasm.S和entry.S中的操作
 .code16           
 .globl start
 start:
@@ -67,9 +67,10 @@ start32:
   orl     $(CR0_PE|CR0_PG|CR0_WP), %eax
   movl    %eax, %cr0
 
-  # Switch to the stack allocated by startothers()
-  movl    (start-4), %esp
-  # Call mpenter()
+  # 在main.c中，我们已经知道了start的物理地址是0x7000，而该地址前面的十二个字节保存了三个该程序用到的值
+  # 分别是栈顶地址，返回地址和临时页表地址
+  movl    (start-4), %esp  # 所以这一步相当于将之前设置的栈顶地址复制给了esp
+  # 返回main.c中去执行mpenter函数
   call	 *(start-8)
 
   movw    $0x8a00, %ax

@@ -1,7 +1,7 @@
 // Multiprocessor support
 // Search memory for MP description structures.
 // http://developer.intel.com/design/pentium/datashts/24201606.pdf
-
+// 多CPU启动的程序文件
 #include "types.h"
 #include "defs.h"
 #include "param.h"
@@ -11,8 +11,8 @@
 #include "mmu.h"
 #include "proc.h"
 
-struct cpu cpus[NCPU];
-int ncpu;
+struct cpu cpus[NCPU];  // 保存所有的cpu
+int ncpu;  // 保存CPU的数量
 uchar ioapicid;
 
 static uchar
@@ -88,6 +88,7 @@ mpconfig(struct mp **pmp)
   return conf;
 }
 
+// 该函数收集所有处理器的信息以及设置多核环境
 void
 mpinit(void)
 {
@@ -98,14 +99,17 @@ mpinit(void)
   struct mpproc *proc;
   struct mpioapic *ioapic;
 
-  if((conf = mpconfig(&mp)) == 0)
+  if((conf = mpconfig(&mp)) == 0)  // 获取多处理器配置表
     panic("Expect to run on an SMP");
   ismp = 1;
   lapic = (uint*)conf->lapicaddr;
+  // 此时conf指向了配置表的物理地址，该表由一个表头和多个表项组成
+  // 所以这里遍历的时候从conf+1开始
   for(p=(uchar*)(conf+1), e=(uchar*)conf+conf->length; p<e; ){
     switch(*p){
-    case MPPROC:
+    case MPPROC:  // 表示CPU部分，是真正应该关注的信息
       proc = (struct mpproc*)p;
+      // 保存所有cpu的信息到cpus数组中，其中apicid唯一标识每一个cpu
       if(ncpu < NCPU) {
         cpus[ncpu].apicid = proc->apicid;  // apicid may differ from ncpu
         ncpu++;

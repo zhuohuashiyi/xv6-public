@@ -7,6 +7,9 @@
 #include "x86.h"
 #include "elf.h"
 
+// 除了第一个用户进程及初始进程是由内核创建的，其他创建进程的方式还有fork
+// 但fork只是复制父进程，可用性不强，而该程序提供通过加载可执行程序的方式来创建进程
+// exec函数负责加载elf文件到内存中形成内存镜像，从而创建进程
 int
 exec(char *path, char **argv)
 {
@@ -17,29 +20,30 @@ exec(char *path, char **argv)
   struct inode *ip;
   struct proghdr ph;
   pde_t *pgdir, *oldpgdir;
-  struct proc *curproc = myproc();
+  struct proc *curproc = myproc();  // 获取当前进程
 
   begin_op();
 
-  if((ip = namei(path)) == 0){
+  if((ip = namei(path)) == 0){  //path指向的是可加载文件的路径，这里验证该文件的inode
     end_op();
     cprintf("exec: fail\n");
     return -1;
   }
-  ilock(ip);
+  ilock(ip);  // inode加锁
   pgdir = 0;
 
-  // Check ELF header
+  // 检查elf文件的头部，有问题则跳转到bad标签处执行
   if(readi(ip, (char*)&elf, 0, sizeof(elf)) != sizeof(elf))
     goto bad;
   if(elf.magic != ELF_MAGIC)
     goto bad;
 
-  if((pgdir = setupkvm()) == 0)
+  if((pgdir = setupkvm()) == 0)  // 设置内核页表
     goto bad;
 
-  // Load program into memory.
+  // 将程序加载进内存
   sz = 0;
+  // 将一段一段的程序加载进内存
   for(i=0, off=elf.phoff; i<elf.phnum; i++, off+=sizeof(ph)){
     if(readi(ip, (char*)&ph, off, sizeof(ph)) != sizeof(ph))
       goto bad;
@@ -56,7 +60,7 @@ exec(char *path, char **argv)
     if(loaduvm(pgdir, (char*)ph.vaddr, ip, ph.off, ph.filesz) < 0)
       goto bad;
   }
-  iunlockput(ip);
+  iunlockput(ip);// 释放inode上的锁
   end_op();
   ip = 0;
 
@@ -67,7 +71,8 @@ exec(char *path, char **argv)
     goto bad;
   clearpteu(pgdir, (char*)(sz - 2*PGSIZE));
   sp = sz;
-
+  // 在命令行执行某文件通常是'main.c -a 1 -b 2'
+  // 这里的main.c指示的可执行文件的路径，其他是参数，这里需要处理这些参数选项
   // Push argument strings, prepare rest of stack in ustack.
   for(argc = 0; argv[argc]; argc++) {
     if(argc >= MAXARG)
@@ -81,7 +86,7 @@ exec(char *path, char **argv)
 
   ustack[0] = 0xffffffff;  // fake return PC
   ustack[1] = argc;
-  ustack[2] = sp - (argc+1)*4;  // argv pointer
+  ustack[2] = sp - (argc+1)*4;  // 保存的是所有参数的起始地址
 
   sp -= (3+argc+1) * 4;
   if(copyout(pgdir, sp, ustack, (3+argc+1)*4) < 0)
@@ -97,13 +102,13 @@ exec(char *path, char **argv)
   oldpgdir = curproc->pgdir;
   curproc->pgdir = pgdir;
   curproc->sz = sz;
-  curproc->tf->eip = elf.entry;  // main
-  curproc->tf->esp = sp;
+  curproc->tf->eip = elf.entry;  // 程序的入口地址
+  curproc->tf->esp = sp;  // 栈顶地址
   switchuvm(curproc);
   freevm(oldpgdir);
   return 0;
 
- bad:
+ bad:   // 出问题释放必要的资源
   if(pgdir)
     freevm(pgdir);
   if(ip){

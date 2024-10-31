@@ -1,10 +1,5 @@
-// Boot loader.
-//
-// Part of the boot block, along with bootasm.S, which calls bootmain().
-// bootasm.S has put the processor into protected 32-bit mode.
-// bootmain() loads an ELF kernel image from the disk starting at
-// sector 1 and then jumps to the kernel entry routine.
-
+// 这也是bootloader的一部分，在bootasm.S程序将系统设置为32位保护模式后
+// 调用bootmain函数，负责将硬盘中ELF格式的内核镜像加载到内存中
 #include "types.h"
 #include "elf.h"
 #include "x86.h"
@@ -22,16 +17,17 @@ bootmain(void)
   void (*entry)(void);
   uchar* pa;
 
-  elf = (struct elfhdr*)0x10000;  // scratch space
+  elf = (struct elfhdr*)0x10000;  // 内核加载地址为0x10000
 
-  // Read 1st page off disk
+//以下函数读取elf文件的第一页
   readseg((uchar*)elf, 4096, 0);
 
-  // Is this an ELF executable?
+  // 判断该文件是否是elf文件
   if(elf->magic != ELF_MAGIC)
-    return;  // let bootasm.S handle error
+    return;  // 如果不是，返回bootasm.S，由其处理错误
 
   // Load each program segment (ignores ph flags).
+  // 加载内核中的每一个程序段
   ph = (struct proghdr*)((uchar*)elf + elf->phoff);
   eph = ph + elf->phnum;
   for(; ph < eph; ph++){
@@ -41,8 +37,8 @@ bootmain(void)
       stosb(pa + ph->filesz, 0, ph->memsz - ph->filesz);
   }
 
-  // Call the entry point from the ELF header.
-  // Does not return!
+  // 通过elf文件读取内核入口
+  // 将控制权交由内核
   entry = (void(*)(void))(elf->entry);
   entry();
 }
@@ -75,6 +71,7 @@ readsect(void *dst, uint offset)
 
 // Read 'count' bytes at 'offset' from kernel into physical address 'pa'.
 // Might copy more than asked.
+// 从内核的offset位置开始读取count个byte到物理地址pa开始的一段内存中
 void
 readseg(uchar* pa, uint count, uint offset)
 {

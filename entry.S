@@ -1,7 +1,7 @@
 # The xv6 kernel starts executing in this file. This file is linked with
 # the kernel C code, so it can refer to kernel symbols such as main().
 # The boot block (bootasm.S and bootmain.c) jumps to entry below.
-        
+# xv6内核首先执行这一个文件  
 # Multiboot header, for multiboot boot loaders like GNU Grub.
 # http://www.gnu.org/software/grub/manual/multiboot/multiboot.html
 #
@@ -40,29 +40,30 @@ multiboot_header:
 .globl _start
 _start = V2P_WO(entry)
 
-# Entering xv6 on boot processor, with paging off.
+# 这是xv6内核的入口
 .globl entry
 entry:
   # Turn on page size extension for 4Mbyte pages
+  # 开启页大小扩展，使页的大小增加到4MB
   movl    %cr4, %eax
   orl     $(CR4_PSE), %eax
   movl    %eax, %cr4
-  # Set page directory
+  # 设置页目录
   movl    $(V2P_WO(entrypgdir)), %eax
   movl    %eax, %cr3
-  # Turn on paging.
+  # 开启分页
   movl    %cr0, %eax
   orl     $(CR0_PG|CR0_WP), %eax
   movl    %eax, %cr0
 
-  # Set up the stack pointer.
+  # 设置栈指针
   movl $(stack + KSTACKSIZE), %esp
 
   # Jump to main(), and switch to executing at
   # high addresses. The indirect call is needed because
   # the assembler produces a PC-relative instruction
   # for a direct jump.
-  mov $main, %eax
+  mov $main, %eax  # 跳转到main.c中main函数执行
   jmp *%eax
 
 .comm stack, KSTACKSIZE

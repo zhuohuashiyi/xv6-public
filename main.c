@@ -14,52 +14,54 @@ extern char end[]; // first address after kernel loaded from ELF file
 // Bootstrap processor starts running C code here.
 // Allocate a real stack and switch to it, first
 // doing some setup required for memory allocator to work.
+// main函数为entry后的执行函数
 int
 main(void)
-{
+{ // 以下完成各种初始化工作
   kinit1(end, P2V(4*1024*1024)); // phys page allocator
   kvmalloc();      // kernel page table
-  mpinit();        // detect other processors
+  mpinit();        // 检测其他处理器，函数在mp.c文件中
   lapicinit();     // interrupt controller
   seginit();       // segment descriptors
   picinit();       // disable pic
   ioapicinit();    // another interrupt controller
   consoleinit();   // console hardware
   uartinit();      // serial port
-  pinit();         // process table
+  pinit();         // 进程块表初始化
   tvinit();        // trap vectors
   binit();         // buffer cache
   fileinit();      // file table
   ideinit();       // disk 
-  startothers();   // start other processors
+  startothers();   // 开启其他处理器
   kinit2(P2V(4*1024*1024), P2V(PHYSTOP)); // must come after startothers()
-  userinit();      // first user process
-  mpmain();        // finish this processor's setup
+  userinit();      // 创建第一个用户进程初始进程，该进程永远不会退出
+  mpmain();        // 开启调度器进程
 }
-
-// Other CPUs jump here from entryother.S.
+ 
+// 其他cpu在entryother.S中完成了所有初始化工作后将进入该函数进一步初始化
 static void
 mpenter(void)
 {
   switchkvm();
   seginit();
   lapicinit();
-  mpmain();
+  mpmain(); // 开启调度器进程
 }
 
-// Common CPU setup code.
+// 所有CPU都会运行该函数以开启调度器进程开始正常调度用户进程运行
 static void
 mpmain(void)
 {
   cprintf("cpu%d: starting %d\n", cpuid(), cpuid());
   idtinit();       // load idt register
+  // started这段表征cpu已经跑起来了
   xchg(&(mycpu()->started), 1); // tell startothers() we're up
-  scheduler();     // start running processes
+  scheduler();     // 开启调度器进程这一个内核级的进程，该进程永远不会退出
 }
 
 pde_t entrypgdir[];  // For entry.S
 
-// Start the non-boot (AP) processors.
+// 启动其他主CPU
 static void
 startothers(void)
 {
@@ -71,24 +73,27 @@ startothers(void)
   // Write entry code to unused memory at 0x7000.
   // The linker has placed the image of entryother.S in
   // _binary_entryother_start.
-  code = P2V(0x7000);
+  code = P2V(0x7000);  // 物理地址转换为虚拟地址
+  // 由于链接器已经将entryother.S的入口地址复制给了符号_binary_emtryother_start
+  // 所以这一步将entryother.S的代码复制到物理地址0x7000处
   memmove(code, _binary_entryother_start, (uint)_binary_entryother_size);
 
   for(c = cpus; c < cpus+ncpu; c++){
-    if(c == mycpu())  // We've started already.
+    if(c == mycpu())  // 主cpu不应该参与以下的操作
       continue;
 
     // Tell entryother.S what stack to use, where to enter, and what
     // pgdir to use. We cannot use kpgdir yet, because the AP processor
     // is running in low  memory, so we use entrypgdir for the APs too.
     stack = kalloc();
-    *(void**)(code-4) = stack + KSTACKSIZE;
-    *(void(**)(void))(code-8) = mpenter;
-    *(int**)(code-12) = (void *) V2P(entrypgdir);
+    // 以下操作将栈、页表等信息存放在code(0x7000)往下的12个字节
+    *(void**)(code-4) = stack + KSTACKSIZE; // 栈的顶部地址
+    *(void(**)(void))(code-8) = mpenter;   // 执行完entryother.S后跳转到这一个地址继续执行
+    *(int**)(code-12) = (void *) V2P(entrypgdir);  // 临时页表地址
 
-    lapicstartap(c->apicid, V2P(code));
+    lapicstartap(c->apicid, V2P(code)); // 使该cpu开始执行code（0x7000)处的代码
 
-    // wait for cpu to finish mpmain()
+    // 等待CPU c启动完成，在开始启动下一个cpu
     while(c->started == 0)
       ;
   }
